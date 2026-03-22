@@ -1263,12 +1263,23 @@ body {
 
     if (numPkgs > 1) {
       if (fromTyping) {
-        // User started typing — hide quote, debounce 2s → calculating → error
-        showState('locked');
-        calcTimer = setTimeout(() => {
+        // Check if all fields across all packages are filled
+        const allFilled = pkgWraps.every(wrap => {
+          return Array.from(wrap.querySelectorAll('input[type="number"]'))
+            .every(inp => parseFloat(inp.value) > 0);
+        });
+
+        if (allFilled) {
+          // All fields done — start calculating immediately
           showState('calculating');
           calcTimer = setTimeout(() => showState('multi'), 1800);
-        }, 2000);
+        } else {
+          // Not all filled — 2s debounce; quote stays visible until timer fires
+          calcTimer = setTimeout(() => {
+            showState('calculating');
+            calcTimer = setTimeout(() => showState('multi'), 1800);
+          }, 2000);
+        }
       } else {
         // Structural change (add/remove package) — preserve calculated if showing, else locked
         if (currentState !== 'calculated') showState('locked');
