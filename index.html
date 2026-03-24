@@ -3130,6 +3130,7 @@ body {
   function closeQuoteModal() {
     document.getElementById('quote-modal-overlay').classList.add('hidden');
     editingCard = null;
+    editingParcelNoPackRegion = null;
   }
 
   function checkModalSave() {
@@ -3149,6 +3150,27 @@ body {
     const price    = parseFloat(document.getElementById('modal-price').value);
     const daysFrom = document.getElementById('modal-days-from').value;
     const daysTo   = document.getElementById('modal-days-to').value;
+
+    // Editing a parcel card in no-pack mode — save back to parcelData, not custom-quotes-list
+    if (editingParcelNoPackRegion) {
+      const r = editingParcelNoPackRegion;
+      editingParcelNoPackRegion = null;
+      parcelData[r].method       = method;
+      parcelData[r].customPrice  = price;
+      parcelData[r].customTimeLo = daysFrom;
+      parcelData[r].customTimeHi = daysTo;
+      // If price is 0, treat as Free Shipping
+      parcelData[r].quoteType = price === 0 ? 'Free Shipping' : 'Flat Rate';
+      const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
+      document.getElementById(`parcel-${r}-method`).textContent = displayMethod;
+      document.getElementById(`parcel-${r}-time`).textContent   = `${daysFrom}-${daysTo} days`;
+      document.getElementById(`parcel-${r}-price`).innerHTML    = price === 0
+        ? '<strong>$0.00</strong>'
+        : `<strong>$${price.toFixed(2)}</strong>`;
+      document.getElementById(`parcel-${r}-quote-label`).textContent = parcelData[r].quoteType;
+      closeQuoteModal();
+      return;
+    }
 
     const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
     const cardHTML = `
@@ -3384,30 +3406,109 @@ body {
   };
   let editingParcelRegion = null;
   let parcelEditChanged = false;
+  let editingParcelNoPackRegion = null;
+  let noPackModeActive = false;
+  let noPackSavedExpressState = {}; // saves express-row visibility per region before no-pack
 
   function applyNoPackParcelMode() {
-    // Show error notice inside the parcel panel
+    noPackModeActive = true;
     document.getElementById('parcel-panel-header').style.borderBottom = '1px solid var(--color-border)';
     document.getElementById('parcel-panel-title').textContent    = 'Shipping Quotes';
     document.getElementById('parcel-panel-subtitle').textContent = 'Shipping quotes cannot be automatically generated.';
     document.getElementById('parcel-no-pack-notice').classList.remove('hidden');
-    // Hide 1stDibs regions; keep seller-set regions in place
+
     ['us', 'eu', 'row'].forEach(r => {
-      const hasSellerQuote = parcelData[r].quoteType !== '1stDibs Quote'
-                          || (parcelData[r].expressQuoteType && parcelData[r].expressQuoteType !== '1stDibs Quote');
-      document.getElementById(`parcel-card-${r}`).classList.toggle('hidden', !hasSellerQuote);
+      // Only show cards where seller set the STANDARD quote; hide everything else
+      const hasSellerStandard = parcelData[r].quoteType !== '1stDibs Quote';
+      const card = document.getElementById(`parcel-card-${r}`);
+      card.classList.toggle('hidden', !hasSellerStandard);
+
+      if (hasSellerStandard) {
+        // Save and hide the express row (always hidden in no-pack — one method per card)
+        const expResolved = document.getElementById(`parcel-express-resolved-${r}`);
+        noPackSavedExpressState[r] = !expResolved.classList.contains('hidden');
+        document.getElementById(`parcel-divider-${r}`).classList.add('hidden');
+        document.getElementById(`parcel-express-loading-${r}`).classList.add('hidden');
+        expResolved.classList.add('hidden');
+        document.getElementById(`parcel-add-${r}`).classList.add('hidden');
+        document.getElementById(`parcel-remove-${r}`).classList.add('hidden');
+
+        // Swap meatball to quote-card behaviour: Edit + Delete
+        card.querySelector('.meatball-popover').innerHTML = `
+          <div class="popover-option" onclick="editParcelCardAsQuote('${r}')">Edit</div>
+          <div class="popover-option danger" onclick="deleteParcelCardQuote('${r}')">Delete</div>`;
+      }
     });
     showState('parcel');
   }
 
   function clearNoPackParcelMode() {
+    if (!noPackModeActive) return;
+    noPackModeActive = false;
     document.getElementById('parcel-panel-header').style.borderBottom = 'none';
     document.getElementById('parcel-panel-title').textContent    = '1stDibs Parcel Self Service';
     document.getElementById('parcel-panel-subtitle').textContent = 'Quotes are generated automatically once package details are entered.';
     document.getElementById('parcel-no-pack-notice').classList.add('hidden');
-    ['us', 'eu', 'row'].forEach(r =>
-      document.getElementById(`parcel-card-${r}`).classList.remove('hidden')
-    );
+
+    ['us', 'eu', 'row'].forEach(r => {
+      document.getElementById(`parcel-card-${r}`).classList.remove('hidden');
+      // Restore express row visibility from saved state
+      const wasExpressShown = !!noPackSavedExpressState[r];
+      document.getElementById(`parcel-express-resolved-${r}`).classList.toggle('hidden', !wasExpressShown);
+      document.getElementById(`parcel-divider-${r}`).classList.toggle('hidden', !wasExpressShown);
+      document.getElementById(`parcel-add-${r}`).classList.toggle('hidden', wasExpressShown);
+      document.getElementById(`parcel-remove-${r}`).classList.toggle('hidden', !wasExpressShown);
+      // Restore meatball to parcel-card behaviour: Edit only
+      document.getElementById(`parcel-card-${r}`).querySelector('.meatball-popover').innerHTML =
+        `<div class="popover-option" onclick="openParcelEditModal('${r}')">Edit</div>`;
+    });
+    noPackSavedExpressState = {};
+  }
+
+  function editParcelCardAsQuote(region) {
+    editingParcelNoPackRegion = region;
+    const d = parcelData[region];
+    populateMethodOptions(); // parcel methods, no 1stDibs Quote type option
+
+    // Pre-fill location (locked to this region)
+    const locEl = document.getElementById('modal-location-select');
+    locEl.querySelectorAll('.custom-select-option').forEach(o => {
+      const match = o.textContent.trim() === d.name;
+      o.classList.toggle('active', match);
+      if (match) locEl.querySelector('.custom-select-value').textContent = o.textContent;
+    });
+    locEl.classList.remove('open');
+
+    // Pre-fill method (match on stripped name)
+    const methodEl = document.getElementById('modal-method-select');
+    const strippedSaved = d.method.replace(/\s*\([^)]*\)$/, '').trim();
+    let matched = false;
+    methodEl.querySelectorAll('.custom-select-option').forEach(o => {
+      const strippedOpt = o.textContent.replace(/\s*\([^)]*\)$/, '').trim();
+      const match = strippedOpt === strippedSaved;
+      o.classList.toggle('active', match);
+      if (match) { methodEl.querySelector('.custom-select-value').textContent = o.textContent; matched = true; }
+    });
+    if (!matched) methodEl.querySelector('.custom-select-value').textContent = '';
+    methodEl.classList.remove('open');
+
+    document.getElementById('modal-price').value     = d.quoteType === 'Free Shipping' ? '0' : (d.customPrice != null ? d.customPrice : '');
+    document.getElementById('modal-days-from').value = d.customTimeLo || '';
+    document.getElementById('modal-days-to').value   = d.customTimeHi || '';
+    document.getElementById('modal-title').textContent    = 'Edit Shipping Quote';
+    document.getElementById('modal-save-btn').textContent = 'Update';
+    document.getElementById('modal-delete-btn').classList.remove('visible');
+    checkModalSave();
+    document.getElementById('quote-modal-overlay').classList.remove('hidden');
+  }
+
+  function deleteParcelCardQuote(region) {
+    // Reset region to 1stDibs Quote and hide card (no seller quote to show in no-pack mode)
+    parcelData[region].quoteType = '1stDibs Quote';
+    delete parcelData[region].customPrice;
+    delete parcelData[region].customTimeLo;
+    delete parcelData[region].customTimeHi;
+    document.getElementById(`parcel-card-${region}`).classList.add('hidden');
   }
 
   function hasModifiedParcelQuotes() {
