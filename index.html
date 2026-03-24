@@ -2739,10 +2739,6 @@ body {
             <img class="custom-select-chevron" src="Down icon.svg" alt="">
           </div>
           <div class="custom-select-dropdown">
-            <div class="custom-select-option" onclick="pickModalOption(this,'modal-method-select')">Front Door Delivery</div>
-            <div class="custom-select-option" onclick="pickModalOption(this,'modal-method-select')">In-Home Shipping</div>
-            <div class="custom-select-option" onclick="pickModalOption(this,'modal-method-select')">White Glove</div>
-            <div class="custom-select-option" onclick="pickModalOption(this,'modal-method-select')">Freight</div>
           </div>
         </div>
       </div>
@@ -2831,7 +2827,8 @@ body {
             return (pl > 0 && pw > 0 && ph > 0 && pwt > 0 && isParcel(pl, pw, ph, pwt))
               ? sum + pwt : sum;
           }, 0);
-          updateParcelQuotes(fl, fw, fh, totalWt);
+          showState('parcel-loading');
+          calcTimer = setTimeout(() => updateParcelQuotes(fl, fw, fh, totalWt), 1800);
         } else {
           // Crossed into freight: move seller-set parcel quotes to custom cards, generate freight
           migrateSellerParcelQuotesToCustomCards();
@@ -3092,7 +3089,19 @@ body {
     checkModalSave();
   }
 
+  function populateMethodOptions() {
+    const isFreight = (currentState === 'calculated');
+    const methods = isFreight
+      ? ['Standard Parcel', 'Express Parcel', 'Front Door Delivery', 'In-Home Shipping']
+      : ['DHL Standard Parcel (5-14 Days)', 'DHL Express Parcel (1-3 Days)', 'Front Door Delivery', 'In-Home Delivery'];
+    const dropdown = document.querySelector('#modal-method-select .custom-select-dropdown');
+    dropdown.innerHTML = methods.map(m =>
+      `<div class="custom-select-option" onclick="pickModalOption(this,'modal-method-select')">${m}</div>`
+    ).join('');
+  }
+
   function openQuoteModal() {
+    populateMethodOptions();
     ['modal-location-select','modal-method-select'].forEach(id => {
       const el = document.getElementById(id);
       el.querySelector('.custom-select-value').textContent = '';
@@ -3132,6 +3141,7 @@ body {
     const daysFrom = document.getElementById('modal-days-from').value;
     const daysTo   = document.getElementById('modal-days-to').value;
 
+    const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
     const cardHTML = `
       <div class="custom-quote-header">
         <div class="region-name" style="margin-bottom:0">
@@ -3151,7 +3161,7 @@ body {
       <div class="region-cols-3">
         <div>
           <div class="region-col-label">Shipping Method</div>
-          <div class="region-col-value">${method}</div>
+          <div class="region-col-value">${displayMethod}</div>
         </div>
         <div>
           <div class="region-col-label">Shipping Time</div>
@@ -3199,6 +3209,7 @@ body {
     editingCard = btn.closest('.custom-quote-card');
     const d = editingCard.dataset;
 
+    populateMethodOptions();
     // Pre-fill modal selects
     ['modal-location-select','modal-method-select'].forEach(id => {
       const el = document.getElementById(id);
@@ -3404,6 +3415,7 @@ body {
       const priceDisplay = quoteType === 'Free Shipping'
         ? '<strong>$0.00</strong>'
         : `<strong>$${parseFloat(price).toFixed(2)}</strong>`;
+      const displayMethod = method.replace(/\s*\([^)]*\)$/, '').trim();
       card.innerHTML = `
         <div class="custom-quote-header">
           <div class="region-name" style="margin-bottom:0">
@@ -3415,7 +3427,7 @@ body {
         <div class="region-cols-3">
           <div>
             <div class="region-col-label">Shipping Method</div>
-            <div class="region-col-value">${method}</div>
+            <div class="region-col-value">${displayMethod}</div>
           </div>
           <div>
             <div class="region-col-label">Shipping Time</div>
@@ -3500,8 +3512,8 @@ body {
 
     ['us','eu','row'].forEach(r => {
       const d = parcelData[r];
-      const shortMethod = d.method.length > 18 ? d.method.slice(0, 16) + '...' : d.method;
-      document.getElementById(`parcel-${r}-method`).textContent      = shortMethod;
+      const displayMethod = d.method.replace(/\s*\([^)]*\)$/, '').trim();
+      document.getElementById(`parcel-${r}-method`).textContent      = displayMethod;
       document.getElementById(`parcel-${r}-quote-label`).textContent = d.quoteType;
       // Only update price/time DOM for 1stDibs Quote regions — seller-set values stay untouched
       if (d.quoteType === '1stDibs Quote') {
@@ -3755,8 +3767,8 @@ body {
       }
     }
     // Re-render the card
-    const shortMethod = parcelData[r].method.length > 18 ? parcelData[r].method.slice(0, 16) + '...' : parcelData[r].method;
-    document.getElementById(`parcel-${r}-method`).textContent      = shortMethod;
+    const displayMethod = parcelData[r].method.replace(/\s*\([^)]*\)$/, '').trim();
+    document.getElementById(`parcel-${r}-method`).textContent      = displayMethod;
     document.getElementById(`parcel-${r}-quote-label`).textContent = parcelData[r].quoteType;
     if (qt1 === 'Flat Rate') {
       document.getElementById(`parcel-${r}-price`).innerHTML       = `<strong>$${parcelData[r].customPrice.toFixed(2)}</strong>`;
