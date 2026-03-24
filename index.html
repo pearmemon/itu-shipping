@@ -839,10 +839,17 @@ body {
   font-size: 12px;
 }
 
-/* Shipping Method column — always one line with ellipsis */
-.region-cols > div:first-child .region-col-value,
-.region-cols-3 > div:first-child .region-col-value,
-.parcel-card-cols > div:first-child .region-col-value {
+/* All cells in modifiable quote cards — single line, truncate overflow */
+.region-cols-3 .region-col-value,
+.region-cols-3 .region-col-sub,
+.parcel-card-cols .region-col-value,
+.parcel-card-cols .region-col-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Freight smart-quote panel — method column only */
+.region-cols > div:first-child .region-col-value {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1257,7 +1264,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-18);
+  padding: var(--sp-18) var(--sp-18) var(--sp-9);
 }
 
 .meatball-menu-wrap {
@@ -1305,8 +1312,8 @@ body {
 
 .region-cols-3 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 4px 8px;
+  grid-template-columns: 120px 120px 168px;
+  gap: 4px var(--sp-18);
   padding: 0 var(--sp-18) var(--sp-18);
 }
 
@@ -1691,9 +1698,9 @@ body {
 }
 .parcel-card-cols {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 120px 120px 168px;
   gap: 4px var(--sp-18);
-  padding: 0 var(--sp-18);
+  padding: 0 var(--sp-18) var(--sp-18);
 }
 .add-method-link {
   display: block;
@@ -2839,7 +2846,16 @@ body {
       const w = parseFloat(document.getElementById('width-1').value)   || 0;
       const h = parseFloat(document.getElementById('height-1').value)  || 0;
       const wt = parseFloat(document.getElementById('weight-1').value) || 0;
-      if (l > 0 && w > 0 && h > 0 && wt > 0) updatePrices(l, w, h, wt, true);
+      if (l > 0 && w > 0 && h > 0 && wt > 0) {
+        if (isParcel(l, w, h, wt) && currentAnswer === 'yes') {
+          // Dimensions went back to parcel — transition out of freight; custom cards stay visible
+          showState('parcel-loading');
+          calcTimer = setTimeout(() => updateParcelQuotes(l, w, h, wt), 1800);
+        } else {
+          // Still freight: refresh smart prices, preserve in-home rows
+          updatePrices(l, w, h, wt, true);
+        }
+      }
       return;
     }
 
